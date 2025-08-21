@@ -1,0 +1,16 @@
+{
+    "name": "voting-dapp",
+    "version": "1.0.0",
+    "private": true,
+    "scripts": {
+        "install:all": "npm --prefix backend install && npm --prefix frontend install",
+        "compile": "npx hardhat compile",
+        "deploy": "npx hardhat run scripts/deploy.js --network localhost",
+        "start:backend": "npm --prefix backend start",
+        "start:frontend": "npm --prefix frontend start"
+    },
+    "devDependencies": {
+        "@nomicfoundation/hardhat-toolbox": "^2.0.2",
+        "hardhat": "^2.26.3"
+    }
+}
