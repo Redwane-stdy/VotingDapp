@@ -8,7 +8,7 @@ Elle est composée de trois parties :
 
 ---
 
-## 🚀 Fonctionnalités
+## Fonctionnalités
 - Ajout de candidats par l’admin
 - Gestion des différentes phases : enregistrement, vote, fin
 - Vote unique par utilisateur
@@ -19,6 +19,57 @@ Elle est composée de trois parties :
 ---
 
 ## 📂 Structure du projet
+
+.
+├── contracts/
+│ └── VotingContract.sol
+├── hardhat.config.js
+├── scripts/
+│ └── deploy.js
+├── shared/
+│ └── contract-info.json # généré par le script deploy
+├── backend/
+│ ├── package.json
+│ ├── server.js
+│ ├── .env.example
+│ ├── Routes/
+│ │ ├── auth.js
+│ │ ├── voting.js
+│ │ └── admin.js
+│ ├── Services/
+│ │ ├── blockchainService.js
+│ │ ├── votingService.js
+│ │ └── validationService.js
+│ ├── Middleware/
+│ │ ├── auth.js
+│ │ └── validation.js
+│ └── Utils/
+│ ├── config.js
+│ └── logger.js
+├── frontend/
+│ ├── package.json
+│ ├── .env.example
+│ └── src/
+│ ├── index.jsx
+│ ├── App.jsx
+│ ├── Components/
+│ │ ├── WalletConnection.jsx
+│ │ ├── CandidateList.jsx
+│ │ ├── VoteForm.jsx
+│ │ ├── Results.jsx
+│ │ └\── AdminPanel.jsx
+│ ├── Services/
+│ │ ├── web3Service.js
+│ │ ├── contractService.js
+│ │ └── authService.js
+│ └── Utils/
+│ ├── constants.js
+│ └── helpers.js
+├── package.json # scripts racine
+├── .gitignore
+└── README.md
+
+
 # Voting DApp
 
 Une application décentralisée (DApp) de vote basée sur **Ethereum**.  
