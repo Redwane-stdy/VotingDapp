@@ -22,8 +22,7 @@ Elle est composée de trois parties :
 
 ### 1. Cloner le projet
 ```bash
-git clone https://github.com/<ton-repo>/VotingDapp.git
-cd VotingDapp
+git clone git@github.com:Redwane-stdy/VotingDapp.git
 ```
 
 ### 2. Installer les dépendances globales
@@ -41,26 +40,38 @@ Crée 20 comptes de test avec 10,000 ETH chacun
 Affiche les clés privées
 ```
 
-### 4. Compiler et déployer le smart contract
+### 4. Importer les clés privés sur Metamask
+
+Importer un wallet avec un clé privé puis copier/coller la clé.
+
+### 5. Compiler et déployer le smart contract
 ```bash
 npx hardhat compile
 npx hardhat run scripts/deploy.js --network localhost
-```
-⚠️ Cela génère un fichier shared/contract-info.json utilisé par le backend et le frontend.
-
-### 5. Lancer le backend
-Dans un autre terminal ou en arrière plan &:
-```bash
-npm run start:backend
+cd backend
+npm start
 ```
 
 ### 6. Lancer le frontend
 
 ```bash
 npm run start:frontend
+
+ou
+
+cd frontend
+npm start
 ```
 
-Le frontend démarre sur http://localhost:5173
+Le frontend démarre sur http://localhost:3000
+
+### 7. Utiliser l'appli
+
+Ajouter les votants et les candidats depuis le Wallet Admin.
+Lancer la phase de vote.
+Se connecter avec les wallet votants pour voter.
+Terminer l'election depuis le compte admin.
+
 
 
 ### Workflow Résumé

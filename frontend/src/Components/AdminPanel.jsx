@@ -3,10 +3,12 @@ import contractService from '../Services/contractService';
 
 const AdminPanel = ({ account, currentPhase, onPhaseChange, onSuccess, onError }) => {
   const [candidateName, setCandidateName] = useState('');
-  const [candidateDescription, setCandateDescription] = useState('');
+  const [candidateDescription, setCandidateDescription] = useState('');
   const [isAddingCandidate, setIsAddingCandidate] = useState(false);
   const [isChangingPhase, setIsChangingPhase] = useState(false);
   const [candidates, setCandidates] = useState([]);
+  const [voters, setVoters] = useState([]);
+  const [newVoter, setNewVoter] = useState('');
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState({
     totalCandidates: 0,
@@ -16,133 +18,128 @@ const AdminPanel = ({ account, currentPhase, onPhaseChange, onSuccess, onError }
 
   useEffect(() => {
     loadAdminData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadAdminData = async () => {
     try {
       setLoading(true);
-      await Promise.all([
-        loadCandidates(),
-        loadStats()
+      const [cands, owner, regVoters] = await Promise.all([
+        contractService.getAllCandidates(),
+        contractService.getOwner(),
+        contractService.getAllVoters()
       ]);
+
+      const totalVotes = cands.reduce((sum, c) => sum + parseInt(c.voteCount || '0', 10), 0);
+
+      setCandidates(cands);
+      setVoters(regVoters);
+      setStats({
+        totalCandidates: cands.length,
+        totalVotes,
+        contractOwner: owner || ''
+      });
     } catch (error) {
       console.error('Erreur lors du chargement des données admin:', error);
-      onError('Erreur lors du chargement des données');
+      onError && onError('Erreur lors du chargement des données');
     } finally {
       setLoading(false);
     }
   };
 
-  const loadCandidates = async () => {
-    try {
-      const candidatesData = await contractService.getAllCandidates();
-      setCandidates(candidatesData);
-    } catch (error) {
-      console.error('Erreur lors du chargement des candidats:', error);
-      throw error;
-    }
-  };
-
-  const loadStats = async () => {
-    try {
-      const candidatesData = await contractService.getAllCandidates();
-      const owner = await contractService.getOwner();
-      
-      const totalVotes = candidatesData.reduce((sum, candidate) => 
-        sum + parseInt(candidate.voteCount), 0
-      );
-
-      setStats({
-        totalCandidates: candidatesData.length,
-        totalVotes: totalVotes,
-        contractOwner: owner
-      });
-    } catch (error) {
-      console.error('Erreur lors du chargement des statistiques:', error);
-      throw error;
-    }
-  };
-
+  // -----------------------------
+  // CANDIDATES
+  // -----------------------------
   const handleAddCandidate = async (e) => {
     e.preventDefault();
-    
+
     if (!candidateName.trim()) {
-      onError('Le nom du candidat est requis');
+      onError && onError('Le nom du candidat est requis');
       return;
     }
-
     if (currentPhase !== 'Registration') {
-      onError('Les candidats ne peuvent être ajoutés que pendant la phase d\'enregistrement');
+      onError && onError("Les candidats ne peuvent être ajoutés que pendant la phase d'enregistrement");
       return;
     }
 
     try {
       setIsAddingCandidate(true);
-      
-      await contractService.addCandidate(
-        candidateName.trim(),
-        candidateDescription.trim(),
-        account
-      );
-      
-      // Réinitialiser le formulaire
+      await contractService.addCandidate(candidateName.trim(), candidateDescription.trim());
       setCandidateName('');
-      setCandateDescription('');
-      
-      // Recharger les données
+      setCandidateDescription('');
       await loadAdminData();
-      
-      onSuccess(`Candidat "${candidateName}" ajouté avec succès !`);
-      
+      onSuccess && onSuccess(`Candidat "${candidateName}" ajouté avec succès !`);
     } catch (error) {
-      console.error('Erreur lors de l\'ajout du candidat:', error);
-      
-      if (error.message.includes('Registration phase ended')) {
-        onError('La phase d\'enregistrement est terminée');
-      } else if (error.message.includes('User rejected')) {
-        onError('Transaction annulée par l\'utilisateur');
+      console.error("Erreur lors de l'ajout du candidat:", error);
+      const msg = (error?.message || '').toLowerCase();
+      if (msg.includes('registration phase ended') || msg.includes('active voting')) {
+        onError && onError("La phase d'enregistrement est terminée");
+      } else if (msg.includes('user rejected')) {
+        onError && onError("Transaction annulée par l'utilisateur");
       } else {
-        onError('Erreur lors de l\'ajout du candidat');
+        onError && onError("Erreur lors de l'ajout du candidat");
       }
     } finally {
       setIsAddingCandidate(false);
     }
   };
 
+  // -----------------------------
+  // VOTERS
+  // -----------------------------
+  const handleRegisterVoter = async (e) => {
+    e.preventDefault();
+    if (!newVoter.trim()) {
+      onError && onError("Adresse du votant requise");
+      return;
+    }
+    try {
+      await contractService.registerVoter(newVoter.trim());
+      onSuccess && onSuccess(`Votant ${newVoter} enregistré !`);
+      setNewVoter('');
+      await loadAdminData();
+    } catch (error) {
+      onError && onError(error.message || 'Erreur enregistrement votant');
+    }
+  };
+
+  // -----------------------------
+  // PHASES
+  // -----------------------------
   const handlePhaseChange = async (newPhase) => {
     if (newPhase === currentPhase) {
-      onError('Cette phase est déjà active');
+      onError && onError('Cette phase est déjà active');
       return;
     }
 
     try {
       setIsChangingPhase(true);
-      
+
       if (newPhase === 'Voting') {
         if (candidates.length === 0) {
-          onError('Impossible de commencer le vote sans candidats');
+          onError && onError('Impossible de commencer le vote sans candidats');
           return;
         }
-        await contractService.startVoting(account);
-        onSuccess('Phase de vote commencée !');
+        await contractService.startVoting();
+        onSuccess && onSuccess('Phase de vote commencée !');
       } else if (newPhase === 'Ended') {
-        await contractService.endVoting(account);
-        onSuccess('Election terminée !');
+        await contractService.endVoting();
+        onSuccess && onSuccess('Élection terminée !');
       }
-      
-      onPhaseChange(newPhase);
-      
+
+      onPhaseChange && onPhaseChange(newPhase);
+      await loadAdminData();
     } catch (error) {
       console.error('Erreur lors du changement de phase:', error);
-      
-      if (error.message.includes('User rejected')) {
-        onError('Transaction annulée par l\'utilisateur');
-      } else if (error.message.includes('Already in voting phase')) {
-        onError('Le vote a déjà commencé');
-      } else if (error.message.includes('Voting not started')) {
-        onError('Le vote n\'a pas encore commencé');
+      const msg = (error?.message || '').toLowerCase();
+      if (msg.includes('user rejected')) {
+        onError && onError("Transaction annulée par l'utilisateur");
+      } else if (msg.includes('already') && msg.includes('voting')) {
+        onError && onError('Le vote a déjà commencé');
+      } else if (msg.includes('not started')) {
+        onError && onError("Le vote n'a pas encore commencé");
       } else {
-        onError('Erreur lors du changement de phase');
+        onError && onError('Erreur lors du changement de phase');
       }
     } finally {
       setIsChangingPhase(false);
@@ -168,7 +165,7 @@ const AdminPanel = ({ account, currentPhase, onPhaseChange, onSuccess, onError }
       case 'Voting':
         return [
           {
-            label: 'Terminer l\'élection',
+            label: "Terminer l'élection",
             action: () => handlePhaseChange('Ended'),
             color: 'btn-danger',
             disabled: false,
@@ -181,7 +178,6 @@ const AdminPanel = ({ account, currentPhase, onPhaseChange, onSuccess, onError }
           }
         ];
       case 'Ended':
-        return [];
       default:
         return [];
     }
@@ -198,15 +194,19 @@ const AdminPanel = ({ account, currentPhase, onPhaseChange, onSuccess, onError }
     );
   }
 
+  const owner = stats.contractOwner || '';
+  const ownerShort =
+    owner && owner.length > 10
+      ? `${owner.substring(0, 6)}...${owner.substring(owner.length - 4)}`
+      : owner;
+
   return (
     <div className="space-y-6">
       {/* En-tête d'administration */}
       <div className="card">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-semibold text-gray-900">Panel d'administration</h2>
-          <div className="text-sm text-gray-500">
-            Propriétaire: {stats.contractOwner.substring(0, 6)}...{stats.contractOwner.substring(stats.contractOwner.length - 4)}
-          </div>
+          <div className="text-sm text-gray-500">Propriétaire: {ownerShort || '—'}</div>
         </div>
 
         {/* Statistiques */}
@@ -244,7 +244,7 @@ const AdminPanel = ({ account, currentPhase, onPhaseChange, onSuccess, onError }
                 <span>{action.label}</span>
               </button>
             ))}
-            
+
             <button
               onClick={loadAdminData}
               className="btn-secondary flex items-center space-x-2"
@@ -262,7 +262,7 @@ const AdminPanel = ({ account, currentPhase, onPhaseChange, onSuccess, onError }
       {currentPhase === 'Registration' && (
         <div className="card">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Ajouter un candidat</h3>
-          
+
           <form onSubmit={handleAddCandidate} className="space-y-4">
             <div>
               <label htmlFor="candidateName" className="block text-sm font-medium text-gray-700 mb-1">
@@ -286,7 +286,7 @@ const AdminPanel = ({ account, currentPhase, onPhaseChange, onSuccess, onError }
               <textarea
                 id="candidateDescription"
                 value={candidateDescription}
-                onChange={(e) => setCandateDescription(e.target.value)}
+                onChange={(e) => setCandidateDescription(e.target.value)}
                 rows={3}
                 className="input-field resize-none"
                 placeholder="Description du candidat, ses propositions..."
@@ -318,10 +318,36 @@ const AdminPanel = ({ account, currentPhase, onPhaseChange, onSuccess, onError }
         </div>
       )}
 
+      {/* Enregistrement des votants */}
+      <div className="card">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Enregistrer un votant</h3>
+        <form onSubmit={handleRegisterVoter} className="flex gap-3 items-center">
+          <input
+            type="text"
+            value={newVoter}
+            onChange={(e) => setNewVoter(e.target.value)}
+            placeholder="Adresse du votant (0x...)"
+            className="input-field flex-1"
+          />
+          <button type="submit" className="btn-primary">Enregistrer</button>
+        </form>
+
+        <h4 className="text-md font-medium text-gray-900 mt-6 mb-2">Votants enregistrés</h4>
+        {voters.length === 0 ? (
+          <p className="text-gray-600">Aucun votant enregistré.</p>
+        ) : (
+          <ul className="list-disc ml-5">
+            {voters.map((v, i) => (
+              <li key={i} className="text-sm font-mono">{v.address || v}</li>
+            ))}
+          </ul>
+        )}
+      </div>
+
       {/* Liste des candidats (admin) */}
       <div className="card">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Candidats enregistrés</h3>
-        
+
         {candidates.length === 0 ? (
           <div className="text-center py-8">
             <svg className="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -329,16 +355,16 @@ const AdminPanel = ({ account, currentPhase, onPhaseChange, onSuccess, onError }
             </svg>
             <h4 className="text-lg font-medium text-gray-900 mb-2">Aucun candidat</h4>
             <p className="text-gray-600">
-              {currentPhase === 'Registration' 
-                ? 'Commencez par ajouter des candidats à l\'élection.'
-                : 'Aucun candidat n\'a été enregistré pour cette élection.'
+              {currentPhase === 'Registration'
+                ? "Commencez par ajouter des candidats à l'élection."
+                : "Aucun candidat n'a été enregistré pour cette élection."
               }
             </p>
           </div>
         ) : (
           <div className="space-y-3">
-            {candidates.map((candidate, index) => (
-              <div key={index} className="border border-gray-200 rounded-lg p-4">
+            {candidates.map((candidate) => (
+              <div key={candidate.id} className="border border-gray-200 rounded-lg p-4">
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
                     <div className="flex items-center space-x-3 mb-2">
@@ -348,16 +374,16 @@ const AdminPanel = ({ account, currentPhase, onPhaseChange, onSuccess, onError }
                       <div>
                         <h4 className="text-lg font-semibold text-gray-900">{candidate.name}</h4>
                         <div className="text-sm text-gray-500">
-                          {candidate.voteCount} vote{parseInt(candidate.voteCount) > 1 ? 's' : ''}
+                          {candidate.voteCount} vote{parseInt(candidate.voteCount, 10) > 1 ? 's' : ''}
                         </div>
                       </div>
                     </div>
-                    
+
                     {candidate.description && (
                       <p className="text-gray-600 text-sm">{candidate.description}</p>
                     )}
                   </div>
-                  
+
                   <div className="ml-4">
                     <div className="text-2xl font-bold text-gray-900">{candidate.voteCount}</div>
                   </div>
@@ -371,13 +397,15 @@ const AdminPanel = ({ account, currentPhase, onPhaseChange, onSuccess, onError }
       {/* Informations de phase */}
       <div className="card">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Informations sur les phases</h3>
-        
+
         <div className="space-y-4">
-          <div className={`p-4 rounded-lg border-l-4 ${
-            currentPhase === 'Registration' 
-              ? 'bg-blue-50 border-blue-400' 
-              : 'bg-gray-50 border-gray-300'
-          }`}>
+          <div
+            className={`p-4 rounded-lg border-l-4 ${
+              currentPhase === 'Registration'
+                ? 'bg-blue-50 border-blue-400'
+                : 'bg-gray-50 border-gray-300'
+            }`}
+          >
             <h4 className="font-medium text-gray-900">Phase d'enregistrement</h4>
             <p className="text-sm text-gray-600 mt-1">
               Ajout des candidats à l'élection. Seul le propriétaire du contrat peut ajouter des candidats.
@@ -386,12 +414,14 @@ const AdminPanel = ({ account, currentPhase, onPhaseChange, onSuccess, onError }
               <div className="text-sm font-medium text-blue-600 mt-2">Phase actuelle</div>
             )}
           </div>
-          
-          <div className={`p-4 rounded-lg border-l-4 ${
-            currentPhase === 'Voting' 
-              ? 'bg-green-50 border-green-400' 
-              : 'bg-gray-50 border-gray-300'
-          }`}>
+
+          <div
+            className={`p-4 rounded-lg border-l-4 ${
+              currentPhase === 'Voting'
+                ? 'bg-green-50 border-green-400'
+                : 'bg-gray-50 border-gray-300'
+            }`}
+          >
             <h4 className="font-medium text-gray-900">Phase de vote</h4>
             <p className="text-sm text-gray-600 mt-1">
               Les utilisateurs peuvent voter pour leur candidat préféré. Chaque adresse ne peut voter qu'une seule fois.
@@ -400,13 +430,15 @@ const AdminPanel = ({ account, currentPhase, onPhaseChange, onSuccess, onError }
               <div className="text-sm font-medium text-green-600 mt-2">Phase actuelle</div>
             )}
           </div>
-          
-          <div className={`p-4 rounded-lg border-l-4 ${
-            currentPhase === 'Ended' 
-              ? 'bg-red-50 border-red-400' 
-              : 'bg-gray-50 border-gray-300'
-          }`}>
-            <h4 className="font-medium text-gray-900">Election terminée</h4>
+
+          <div
+            className={`p-4 rounded-lg border-l-4 ${
+              currentPhase === 'Ended'
+                ? 'bg-red-50 border-red-400'
+                : 'bg-gray-50 border-gray-300'
+            }`}
+          >
+            <h4 className="font-medium text-gray-900">Élection terminée</h4>
             <p className="text-sm text-gray-600 mt-1">
               L'élection est terminée. Les résultats finaux sont disponibles et ne peuvent plus être modifiés.
             </p>

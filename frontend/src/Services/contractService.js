@@ -7,7 +7,6 @@ class ContractService {
     this.initialized = false;
   }
 
-  // Initialiser avec les infos du backend
   async initialize() {
     try {
       console.log('Initialisation du service contractuel...');
@@ -42,7 +41,6 @@ class ContractService {
     }
   }
 
-  // Création d'une instance du contrat
   async getContract(needSigner = false) {
     await this.ensureInitialized();
 
@@ -80,7 +78,7 @@ class ContractService {
   }
 
   // -----------------------------
-  // MÉTHODES DE LECTURE (provider)
+  // MÉTHODES DE LECTURE
   // -----------------------------
 
   async getElectionName() {
@@ -98,12 +96,10 @@ class ContractService {
     return (await contract.totalVotes()).toString();
   }
 
-  // AMÉLIORÉE: Utilise getAllCandidatesDetails pour une seule call
   async getAllCandidates() {
     try {
       const contract = await this.getContract(false);
       
-      // Vérifier si la nouvelle fonction existe
       if (contract.getAllCandidatesDetails) {
         const result = await contract.getAllCandidatesDetails();
         const candidates = [];
@@ -119,7 +115,6 @@ class ContractService {
         
         return candidates;
       } else {
-        // Fallback pour l'ancienne méthode
         const candidateIds = await contract.getAllCandidates();
         const candidates = [];
         
@@ -154,14 +149,12 @@ class ContractService {
     }
   }
 
-  // CORRIGÉE: Convertit en nombre et mappe aux phases
   async getCurrentWorkflowStatus() {
     try {
       const contract = await this.getContract(false);
       const status = await contract.workflowStatus();
       const statusNumber = parseInt(status);
       
-      // Mapping des statuts numériques vers les noms
       const statusMap = {
         0: 'Registration',
         1: 'Voting', 
@@ -187,13 +180,55 @@ class ContractService {
   }
 
   async getVoterInfo(address) {
-    const contract = await this.getContract(false);
-    const [isRegistered, hasVoted, votedFor] = await contract.getVoterInfo(address);
-    return {
-      isRegistered,
-      hasVoted,
-      votedFor: votedFor.toString()
-    };
+    try {
+      const contract = await this.getContract(false);
+      
+      // Utilisez le bon nom de fonction : getVoterInfo au lieu de getVoter
+      const [isRegistered, hasVoted, votedFor] = await contract.getVoterInfo(address);
+      
+      console.log(`Info votant pour ${address}:`, { isRegistered, hasVoted, votedFor: votedFor.toString() });
+      
+      return {
+        isRegistered,
+        hasVoted,
+        votedFor: votedFor.toString()
+      };
+    } catch (error) {
+      console.error('Erreur getVoterInfo:', error);
+      return {
+        isRegistered: false,
+        hasVoted: false,
+        votedFor: '0'
+      };
+    }
+  }
+
+  async getAllVoters() {
+    try {
+      const contract = await this.getContract(false);
+      const voters = await contract.getAllVoters();
+      const voterDetails = [];
+      
+      for (const voterAddress of voters) {
+        try {
+          // Utilise la fonction corrigée getVoterInfo
+          const voterInfo = await this.getVoterInfo(voterAddress);
+          voterDetails.push({
+            address: voterAddress,
+            isRegistered: voterInfo.isRegistered,
+            hasVoted: voterInfo.hasVoted,
+            votedFor: voterInfo.votedFor
+          });
+        } catch (error) {
+          console.warn(`Error fetching voter ${voterAddress}:`, error);
+        }
+      }
+      
+      return voterDetails;
+    } catch (error) {
+      console.error('Error fetching voters:', error);
+      return [];
+    }
   }
 
   async getResults() {
@@ -220,13 +255,18 @@ class ContractService {
   }
 
   async isAdmin(address) {
-    const contract = await this.getContract(false);
-    const adminAddress = await contract.admin();
-    return adminAddress.toLowerCase() === address.toLowerCase();
+    try {
+      const contract = await this.getContract(false);
+      const owner = await contract.owner();
+      return owner.toLowerCase() === address.toLowerCase();
+    } catch (error) {
+      console.error('Erreur isAdmin:', error);
+      return false;
+    }
   }
 
   // -----------------------------
-  // MÉTHODES D'ÉCRITURE (signer)
+  // MÉTHODES D'ÉCRITURE
   // -----------------------------
 
   async vote(candidateId) {
@@ -235,20 +275,29 @@ class ContractService {
       const gasEstimate = await contract.vote.estimateGas(candidateId);
       const gasLimit = gasEstimate * 120n / 100n;
       const tx = await contract.vote(candidateId, { gasLimit });
-      return await tx.wait();
+      
+      console.log('Transaction vote envoyée:', tx.hash);
+      const receipt = await tx.wait();
+      console.log('Transaction vote confirmée:', receipt);
+      
+      return receipt;
     } catch (error) {
       this.handleContractError(error);
     }
   }
 
-  // CORRIGÉE: Méthode compatible avec AdminPanel
-  async addCandidate(name, description, fromAddress) {
+  async addCandidate(name, description) {
     try {
       const contract = await this.getContract(true);
       const gasEstimate = await contract.addCandidate.estimateGas(name, description);
       const gasLimit = gasEstimate * 120n / 100n;
       const tx = await contract.addCandidate(name, description, { gasLimit });
-      return await tx.wait();
+      
+      console.log('Transaction addCandidate envoyée:', tx.hash);
+      const receipt = await tx.wait();
+      console.log('Transaction addCandidate confirmée:', receipt);
+      
+      return receipt;
     } catch (error) {
       this.handleContractError(error);
     }
@@ -260,7 +309,12 @@ class ContractService {
       const gasEstimate = await contract.registerVoter.estimateGas(voterAddress);
       const gasLimit = gasEstimate * 120n / 100n;
       const tx = await contract.registerVoter(voterAddress, { gasLimit });
-      return await tx.wait();
+      
+      console.log('Transaction registerVoter envoyée:', tx.hash);
+      const receipt = await tx.wait();
+      console.log('Transaction registerVoter confirmée:', receipt);
+      
+      return receipt;
     } catch (error) {
       this.handleContractError(error);
     }
@@ -272,38 +326,50 @@ class ContractService {
       const gasEstimate = await contract.registerMultipleVoters.estimateGas(voterAddresses);
       const gasLimit = gasEstimate * 120n / 100n;
       const tx = await contract.registerMultipleVoters(voterAddresses, { gasLimit });
-      return await tx.wait();
+      
+      console.log('Transaction registerMultipleVoters envoyée:', tx.hash);
+      const receipt = await tx.wait();
+      console.log('Transaction registerMultipleVoters confirmée:', receipt);
+      
+      return receipt;
     } catch (error) {
       this.handleContractError(error);
     }
   }
 
-  // CORRIGÉE: Méthode compatible avec AdminPanel
-  async startVoting(fromAddress) {
+  async startVoting() {
     try {
       const contract = await this.getContract(true);
       const gasEstimate = await contract.startVoting.estimateGas();
       const gasLimit = gasEstimate * 120n / 100n;
       const tx = await contract.startVoting({ gasLimit });
-      return await tx.wait();
+      
+      console.log('Transaction startVoting envoyée:', tx.hash);
+      const receipt = await tx.wait();
+      console.log('Transaction startVoting confirmée:', receipt);
+      
+      return receipt;
     } catch (error) {
       this.handleContractError(error);
     }
   }
 
-  // CORRIGÉE: Méthode compatible avec AdminPanel (alias pour endVoting)
-  async endVoting(fromAddress) {
-    return this.stopVoting();
-  }
-
-  async stopVoting() {
+  async endVoting() {
     try {
       const contract = await this.getContract(true);
+      
+      // Votre contrat utilise stopVoting() au lieu de endVoting()
       const gasEstimate = await contract.stopVoting.estimateGas();
       const gasLimit = gasEstimate * 120n / 100n;
       const tx = await contract.stopVoting({ gasLimit });
-      return await tx.wait();
+      
+      console.log('Transaction stopVoting envoyée:', tx.hash);
+      const receipt = await tx.wait();
+      console.log('Transaction stopVoting confirmée:', receipt);
+      
+      return receipt;
     } catch (error) {
+      console.error('Erreur endVoting/stopVoting:', error);
       this.handleContractError(error);
     }
   }
@@ -314,20 +380,29 @@ class ContractService {
       const gasEstimate = await contract.setElectionName.estimateGas(name);
       const gasLimit = gasEstimate * 120n / 100n;
       const tx = await contract.setElectionName(name, { gasLimit });
-      return await tx.wait();
+      
+      console.log('Transaction setElectionName envoyée:', tx.hash);
+      const receipt = await tx.wait();
+      console.log('Transaction setElectionName confirmée:', receipt);
+      
+      return receipt;
     } catch (error) {
       this.handleContractError(error);
     }
   }
 
-  // NOUVELLE: Fonction de reset pour le développement
   async resetContract() {
     try {
       const contract = await this.getContract(true);
       const gasEstimate = await contract.resetContract.estimateGas();
       const gasLimit = gasEstimate * 120n / 100n;
       const tx = await contract.resetContract({ gasLimit });
-      return await tx.wait();
+      
+      console.log('Transaction resetContract envoyée:', tx.hash);
+      const receipt = await tx.wait();
+      console.log('Transaction resetContract confirmée:', receipt);
+      
+      return receipt;
     } catch (error) {
       console.error('Error resetting contract:', error);
       this.handleContractError(error);
@@ -343,7 +418,6 @@ class ContractService {
     return await tx.wait(confirmations);
   }
 
-  // AMÉLIORÉE: Gestion d'erreur plus robuste
   handleContractError(error) {
     console.error('Contract error:', error);
     
@@ -359,6 +433,9 @@ class ContractService {
     if (error.message?.includes('user rejected transaction')) {
       throw new Error('User rejected');
     }
+    if (error.message?.includes('User rejected')) {
+      throw new Error('User rejected');
+    }
     if (error.message?.includes('Voting is already active')) {
       throw new Error('Voting is already active');
     }
@@ -367,6 +444,18 @@ class ContractService {
     }
     if (error.message?.includes('Voting is not active')) {
       throw new Error('Voting not started');
+    }
+    if (error.message?.includes('Voter not registered')) {
+      throw new Error('Voter not registered');
+    }
+    if (error.message?.includes('already registered')) {
+      throw new Error('already registered');
+    }
+    if (error.message?.includes('Already voted')) {
+      throw new Error('Already voted');
+    }
+    if (error.message?.includes('Voter has already voted')) {
+      throw new Error('Already voted');
     }
     if (error.reason) {
       throw new Error(error.reason);

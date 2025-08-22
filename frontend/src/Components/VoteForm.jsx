@@ -6,89 +6,51 @@ const VoteForm = ({ account, onSuccess, onError }) => {
   const [selectedCandidate, setSelectedCandidate] = useState('');
   const [isVoting, setIsVoting] = useState(false);
   const [hasVoted, setHasVoted] = useState(false);
+  const [isRegistered, setIsRegistered] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [account]);
 
   const loadData = async () => {
     try {
       setLoading(true);
-      await Promise.all([
-        loadCandidates(),
-        checkVotingStatus()
+      const [cands, voter] = await Promise.all([
+        contractService.getAllCandidates(),
+        account ? contractService.getVoterInfo(account) : Promise.resolve({ isRegistered: false, hasVoted: false })
       ]);
+      setCandidates(cands);
+      setIsRegistered(Boolean(voter.isRegistered));
+      setHasVoted(Boolean(voter.hasVoted));
     } catch (error) {
       console.error('Erreur lors du chargement des données:', error);
-      onError('Erreur lors du chargement des données');
+      onError && onError('Erreur lors du chargement des données');
     } finally {
       setLoading(false);
     }
   };
 
-  const loadCandidates = async () => {
-    try {
-      const candidatesData = await contractService.getAllCandidates();
-      setCandidates(candidatesData);
-    } catch (error) {
-      console.error('Erreur lors du chargement des candidats:', error);
-      throw error;
-    }
-  };
-
-  const checkVotingStatus = async () => {
-    try {
-      if (account) {
-        const votingStatus = await contractService.hasVoted(account);
-        setHasVoted(votingStatus);
-      }
-    } catch (error) {
-      console.error('Erreur lors de la vérification du statut de vote:', error);
-      throw error;
-    }
-  };
-
   const handleVote = async (e) => {
     e.preventDefault();
-    
-    if (!selectedCandidate) {
-      onError('Veuillez sélectionner un candidat');
-      return;
-    }
 
-    if (hasVoted) {
-      onError('Vous avez déjà voté');
-      return;
-    }
+    if (!selectedCandidate) return onError && onError('Veuillez sélectionner un candidat');
+    if (hasVoted) return onError && onError('Vous avez déjà voté');
+    if (!isRegistered) return onError && onError("Vous devez être enregistré pour voter");
 
     try {
       setIsVoting(true);
-      
       const candidateId = parseInt(selectedCandidate);
-      await contractService.vote(candidateId, account);
-      
+      await contractService.vote(candidateId);
       setHasVoted(true);
-      onSuccess('Vote enregistré avec succès !');
-      
-      // Réinitialiser le formulaire
+      onSuccess && onSuccess('Vote enregistré avec succès !');
       setSelectedCandidate('');
-      
     } catch (error) {
       console.error('Erreur lors du vote:', error);
-      
-      if (error.message.includes('Already voted')) {
-        onError('Vous avez déjà voté');
-        setHasVoted(true);
-      } else if (error.message.includes('Voting not started')) {
-        onError('La phase de vote n\'a pas encore commencé');
-      } else if (error.message.includes('Voting ended')) {
-        onError('La phase de vote est terminée');
-      } else if (error.message.includes('User rejected')) {
-        onError('Transaction annulée par l\'utilisateur');
-      } else {
-        onError('Erreur lors de l\'enregistrement du vote');
-      }
+      const msg = error?.message || 'Erreur lors de l’enregistrement du vote';
+      onError && onError(msg);
+      if (msg.toLowerCase().includes('already voted')) setHasVoted(true);
     } finally {
       setIsVoting(false);
     }
@@ -100,6 +62,17 @@ const VoteForm = ({ account, onSuccess, onError }) => {
         <div className="flex items-center justify-center py-8">
           <div className="spinner mr-3"></div>
           <span className="text-gray-600">Chargement...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isRegistered) {
+    return (
+      <div className="card">
+        <div className="text-center py-8">
+          <h3 className="text-lg font-semibold text-red-600 mb-2">Non enregistré</h3>
+          <p className="text-gray-600">Votre adresse n’est pas enregistrée. Contactez l’administrateur.</p>
         </div>
       </div>
     );
@@ -137,16 +110,16 @@ const VoteForm = ({ account, onSuccess, onError }) => {
   return (
     <div className="card">
       <h2 className="text-xl font-semibold text-gray-900 mb-6">Voter pour un candidat</h2>
-      
+
       <form onSubmit={handleVote} className="space-y-6">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-3">
             Sélectionnez votre candidat :
           </label>
-          
+
           <div className="space-y-3">
-            {candidates.map((candidate, index) => (
-              <div key={index} className="relative">
+            {candidates.map((candidate) => (
+              <div key={candidate.id} className="relative">
                 <label className="flex items-start p-4 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
                   <input
                     type="radio"
@@ -179,7 +152,7 @@ const VoteForm = ({ account, onSuccess, onError }) => {
             <div>
               <h4 className="text-sm font-medium text-yellow-800">Important</h4>
               <p className="text-sm text-yellow-700 mt-1">
-                Une fois votre vote enregistré sur la blockchain, il ne peut pas être modifié. 
+                Une fois votre vote enregistré sur la blockchain, il ne peut pas être modifié.
                 Assurez-vous de votre choix avant de confirmer.
               </p>
             </div>
@@ -197,7 +170,7 @@ const VoteForm = ({ account, onSuccess, onError }) => {
             </svg>
             <span className="text-sm">Actualiser</span>
           </button>
-          
+
           <button
             type="submit"
             disabled={!selectedCandidate || isVoting}

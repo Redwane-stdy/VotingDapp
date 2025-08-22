@@ -2,8 +2,8 @@
   "_format": "hh-sol-cache-2",
   "files": {
     "/Users/red1/VotingDapp/contracts/VotingContract.sol": {
-      "lastModificationDate": 1755871151683,
-      "contentHash": "2067b488ea9abe22ef505cf1acb14891",
+      "lastModificationDate": 1755876936348,
+      "contentHash": "3ae827f470ababb7d18a22007604ebc8",
       "sourceName": "contracts/VotingContract.sol",
       "solcConfig": {
         "version": "0.8.19",

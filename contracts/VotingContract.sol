@@ -25,6 +25,7 @@ contract VotingContract {
     mapping(uint256 => Candidate) public candidates;
     mapping(address => Voter) public voters;
     uint256[] public candidateIds;
+    address[] public voterList; // <-- Déclaration ajoutée
     
     // Events
     event CandidateAdded(uint256 indexed candidateId, string name);
@@ -56,7 +57,6 @@ contract VotingContract {
         candidateCounter = 0;
     }
     
-    // AJOUT: Fonction owner() pour la compatibilité avec votre frontend
     function owner() external view returns (address) {
         return admin;
     }
@@ -91,6 +91,7 @@ contract VotingContract {
             votedFor: 0
         });
         
+        voterList.push(_voter);
         emit VoterRegistered(_voter);
     }
     
@@ -102,6 +103,7 @@ contract VotingContract {
                     hasVoted: false,
                     votedFor: 0
                 });
+                voterList.push(_voters[i]);
                 emit VoterRegistered(_voters[i]);
             }
         }
@@ -150,7 +152,6 @@ contract VotingContract {
         return candidateIds;
     }
     
-    // MODIFIÉ: Fonction pour récupérer tous les candidats avec leurs détails
     function getAllCandidatesDetails() external view returns (
         uint256[] memory ids,
         string[] memory names,
@@ -227,7 +228,6 @@ contract VotingContract {
         return candidateIds.length;
     }
     
-    // AJOUT: Fonction pour obtenir le statut actuel (compatible avec votre frontend)
     function workflowStatus() external view returns (uint256) {
         if (!votingActive && candidateIds.length == 0) {
             return 0; // Registration phase
@@ -238,7 +238,14 @@ contract VotingContract {
         }
     }
     
-    // AJOUT: Fonction de reset pour le développement (à retirer en production)
+    function getAllVoters() external view returns (address[] memory) {
+        return voterList;
+    }
+    
+    function getVoterCount() external view returns (uint256) {
+        return voterList.length;
+    }
+    
     function resetContract() external onlyAdmin {
         // Supprimer tous les candidats
         for (uint256 i = 0; i < candidateIds.length; i++) {
@@ -246,13 +253,17 @@ contract VotingContract {
         }
         delete candidateIds;
         
+        // Supprimer tous les votants (seulement possible pour les nouveaux déploiements)
+        // Note: Les mappings ne peuvent pas être supprimés, mais on peut réinitialiser la liste
+        for (uint256 i = 0; i < voterList.length; i++) {
+            delete voters[voterList[i]];
+        }
+        delete voterList;
+        
         // Réinitialiser les variables
         votingActive = false;
         totalVotes = 0;
         candidateCounter = 0;
         electionName = "Default Election";
-        
-        // Note: Les voters mappings ne peuvent pas être supprimés
-        // Mais ils seront "oubliés" avec le nouveau déploiement
     }
 }
