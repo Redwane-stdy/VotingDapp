@@ -35,7 +35,7 @@ const AdminPanel = ({ account, currentPhase, onPhaseChange, onSuccess, onError }
 
   const loadCandidates = async () => {
     try {
-      const candidatesData = await contractService.getCandidates();
+      const candidatesData = await contractService.getAllCandidates();
       setCandidates(candidatesData);
     } catch (error) {
       console.error('Erreur lors du chargement des candidats:', error);
@@ -45,7 +45,7 @@ const AdminPanel = ({ account, currentPhase, onPhaseChange, onSuccess, onError }
 
   const loadStats = async () => {
     try {
-      const candidatesData = await contractService.getCandidates();
+      const candidatesData = await contractService.getAllCandidates();
       const owner = await contractService.getOwner();
       
       const totalVotes = candidatesData.reduce((sum, candidate) => 

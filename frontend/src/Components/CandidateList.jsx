@@ -13,7 +13,7 @@ const CandidateList = ({ currentPhase, onError }) => {
   const loadCandidates = async () => {
     try {
       setLoading(true);
-      const candidatesData = await contractService.getCandidates();
+      const candidatesData = await contractService.getAllCandidates();
       
       // Calculer le total des votes
       const total = candidatesData.reduce((sum, candidate) => sum + parseInt(candidate.voteCount), 0);

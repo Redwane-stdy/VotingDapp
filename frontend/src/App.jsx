@@ -52,7 +52,7 @@ function App() {
       if (!account) return;
       
       // Temporaire : forcer votre adresse comme propriétaire pour les tests
-      const TEMP_OWNER = "0x468950fbea0CC70ad84Ea94723AdecD6103ae568";
+      const TEMP_OWNER = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
       
       if (account.toLowerCase() === TEMP_OWNER.toLowerCase()) {
         console.log('✅ Propriétaire reconnu:', account);

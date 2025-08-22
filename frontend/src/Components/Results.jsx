@@ -14,7 +14,7 @@ const Results = ({ currentPhase, onError }) => {
   const loadResults = async () => {
     try {
       setLoading(true);
-      const candidates = await contractService.getCandidates();
+      const candidates = await contractService.getAllCandidates();
       
       // Trier par nombre de votes (décroissant)
       const sortedResults = candidates.sort((a, b) => parseInt(b.voteCount) - parseInt(a.voteCount));

@@ -3,64 +3,74 @@ import web3Service from './web3Service';
 
 class ContractService {
   constructor() {
-    this.contract = null;
     this.contractInfo = null;
     this.initialized = false;
   }
 
-  // Initialiser le service avec les informations du contrat
+  // Initialiser avec les infos du backend
   async initialize() {
     try {
-      // Récupérer les informations du contrat depuis le backend
-      const response = await fetch(`${process.env.REACT_APP_API_URL}/contract`);
-      
+      console.log('Initialisation du service contractuel...');
+
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/api/contract`);
+      console.log("API URL utilisée:", process.env.REACT_APP_API_URL);
+
       if (!response.ok) {
-        throw new Error('Failed to fetch contract info from backend');
+        throw new Error(`Failed to fetch contract info: ${response.status} ${response.statusText}`);
       }
-      
+
       const data = await response.json();
-      
       if (!data.success) {
         throw new Error(data.message || 'Failed to get contract info');
       }
-      
+
       this.contractInfo = data.data;
       this.initialized = true;
-      
+
       console.log('Contract service initialized:', this.contractInfo);
       return this.contractInfo;
-      
+
     } catch (error) {
       console.error('Error initializing contract service:', error);
       throw error;
     }
   }
 
-  // S'assurer que le service est initialisé
   async ensureInitialized() {
     if (!this.initialized) {
       await this.initialize();
     }
   }
 
-  // Créer une instance du contrat
+  // Création d'une instance du contrat
   async getContract(needSigner = false) {
     await this.ensureInitialized();
-    
+
     const provider = web3Service.getProvider();
     if (!provider) {
-      throw new Error('Web3 provider not available. Please connect your wallet.');
+      throw new Error('No provider available. Please check your Hardhat node or connect MetaMask.');
     }
 
     let providerOrSigner = provider;
-    
+
     if (needSigner) {
       const signer = web3Service.getSigner();
       if (!signer) {
-        throw new Error('Signer not available. Please connect your wallet.');
+        if (!web3Service.isMetaMaskAvailable()) {
+          throw new Error('MetaMask not installed. Please install MetaMask.');
+        } else if (!web3Service.isConnected) {
+          throw new Error('Wallet not connected. Please connect MetaMask.');
+        } else {
+          throw new Error('Signer not available. Please reconnect your wallet.');
+        }
       }
       providerOrSigner = signer;
     }
+
+    console.log(`Creating contract instance with ${needSigner ? 'signer' : 'provider'}`, {
+      address: this.contractInfo.address,
+      needSigner
+    });
 
     return new ethers.Contract(
       this.contractInfo.address,
@@ -69,185 +79,177 @@ class ContractService {
     );
   }
 
-  // Méthodes de lecture (ne nécessitent pas de signer)
+  // -----------------------------
+  // MÉTHODES DE LECTURE (provider)
+  // -----------------------------
+
   async getElectionName() {
-    try {
-      const contract = await this.getContract();
-      return await contract.electionName();
-    } catch (error) {
-      console.error('Error getting election name:', error);
-      throw error;
-    }
+    const contract = await this.getContract(false);
+    return await contract.electionName();
   }
 
   async isVotingActive() {
-    try {
-      const contract = await this.getContract();
-      return await contract.votingActive();
-    } catch (error) {
-      console.error('Error checking voting status:', error);
-      throw error;
-    }
+    const contract = await this.getContract(false);
+    return await contract.votingActive();
   }
 
   async getTotalVotes() {
+    const contract = await this.getContract(false);
+    return (await contract.totalVotes()).toString();
+  }
+
+  // AMÉLIORÉE: Utilise getAllCandidatesDetails pour une seule call
+  async getAllCandidates() {
     try {
-      const contract = await this.getContract();
-      const total = await contract.totalVotes();
-      return total.toString();
+      const contract = await this.getContract(false);
+      
+      // Vérifier si la nouvelle fonction existe
+      if (contract.getAllCandidatesDetails) {
+        const result = await contract.getAllCandidatesDetails();
+        const candidates = [];
+        
+        for (let i = 0; i < result.ids.length; i++) {
+          candidates.push({
+            id: result.ids[i].toString(),
+            name: result.names[i],
+            description: result.descriptions[i],
+            voteCount: result.voteCounts[i].toString()
+          });
+        }
+        
+        return candidates;
+      } else {
+        // Fallback pour l'ancienne méthode
+        const candidateIds = await contract.getAllCandidates();
+        const candidates = [];
+        
+        for (const id of candidateIds) {
+          try {
+            const [candidateId, name, description, voteCount] = await contract.getCandidate(id);
+            candidates.push({
+              id: candidateId.toString(),
+              name,
+              description,
+              voteCount: voteCount.toString()
+            });
+          } catch (error) {
+            console.warn(`Error fetching candidate ${id}:`, error);
+          }
+        }
+        return candidates;
+      }
     } catch (error) {
-      console.error('Error getting total votes:', error);
+      console.error('Error fetching candidates:', error);
+      return [];
+    }
+  }
+
+  async getOwner() {
+    try {
+      const contract = await this.getContract(false);
+      return await contract.owner();
+    } catch (error) {
+      console.error('Erreur getOwner:', error);
       throw error;
     }
   }
 
-  async getAllCandidates() {
+  // CORRIGÉE: Convertit en nombre et mappe aux phases
+  async getCurrentWorkflowStatus() {
     try {
-      const contract = await this.getContract();
-      const candidateIds = await contract.getAllCandidates();
+      const contract = await this.getContract(false);
+      const status = await contract.workflowStatus();
+      const statusNumber = parseInt(status);
       
-      const candidates = [];
-      for (const id of candidateIds) {
-        try {
-          const [candidateId, name, description, voteCount] = await contract.getCandidate(id);
-          candidates.push({
-            id: candidateId.toString(),
-            name,
-            description,
-            voteCount: voteCount.toString()
-          });
-        } catch (error) {
-          console.warn(`Error fetching candidate ${id}:`, error);
-        }
-      }
+      // Mapping des statuts numériques vers les noms
+      const statusMap = {
+        0: 'Registration',
+        1: 'Voting', 
+        2: 'Ended'
+      };
       
-      return candidates;
+      return statusMap[statusNumber] || 'Unknown';
     } catch (error) {
-      console.error('Error getting all candidates:', error);
+      console.error('Erreur getCurrentWorkflowStatus:', error);
       throw error;
     }
   }
 
   async getCandidate(candidateId) {
-    try {
-      const contract = await this.getContract();
-      const [id, name, description, voteCount] = await contract.getCandidate(candidateId);
-      
-      return {
-        id: id.toString(),
-        name,
-        description,
-        voteCount: voteCount.toString()
-      };
-    } catch (error) {
-      console.error(`Error getting candidate ${candidateId}:`, error);
-      throw error;
-    }
+    const contract = await this.getContract(false);
+    const [id, name, description, voteCount] = await contract.getCandidate(candidateId);
+    return {
+      id: id.toString(),
+      name,
+      description,
+      voteCount: voteCount.toString()
+    };
   }
 
   async getVoterInfo(address) {
-    try {
-      const contract = await this.getContract();
-      const [isRegistered, hasVoted, votedFor] = await contract.getVoterInfo(address);
-      
-      return {
-        isRegistered,
-        hasVoted,
-        votedFor: votedFor.toString()
-      };
-    } catch (error) {
-      console.error(`Error getting voter info for ${address}:`, error);
-      throw error;
-    }
+    const contract = await this.getContract(false);
+    const [isRegistered, hasVoted, votedFor] = await contract.getVoterInfo(address);
+    return {
+      isRegistered,
+      hasVoted,
+      votedFor: votedFor.toString()
+    };
   }
 
   async getResults() {
-    try {
-      const contract = await this.getContract();
-      const [ids, names, voteCounts] = await contract.getResults();
-      
-      const results = [];
-      for (let i = 0; i < ids.length; i++) {
-        results.push({
-          id: ids[i].toString(),
-          name: names[i],
-          voteCount: voteCounts[i].toString()
-        });
-      }
-      
-      // Trier par nombre de votes (décroissant)
-      results.sort((a, b) => parseInt(b.voteCount) - parseInt(a.voteCount));
-      
-      return results;
-    } catch (error) {
-      console.error('Error getting results:', error);
-      throw error;
-    }
+    const contract = await this.getContract(false);
+    const [ids, names, voteCounts] = await contract.getResults();
+
+    const results = ids.map((id, i) => ({
+      id: id.toString(),
+      name: names[i],
+      voteCount: voteCounts[i].toString()
+    }));
+
+    return results.sort((a, b) => parseInt(b.voteCount) - parseInt(a.voteCount));
   }
 
   async getWinner() {
-    try {
-      const contract = await this.getContract();
-      const [winnerId, winnerName, winnerVotes] = await contract.getWinner();
-      
-      return {
-        id: winnerId.toString(),
-        name: winnerName,
-        voteCount: winnerVotes.toString()
-      };
-    } catch (error) {
-      console.error('Error getting winner:', error);
-      throw error;
-    }
+    const contract = await this.getContract(false);
+    const [winnerId, winnerName, winnerVotes] = await contract.getWinner();
+    return {
+      id: winnerId.toString(),
+      name: winnerName,
+      voteCount: winnerVotes.toString()
+    };
   }
 
   async isAdmin(address) {
-    try {
-      const contract = await this.getContract();
-      const adminAddress = await contract.admin();
-      return adminAddress.toLowerCase() === address.toLowerCase();
-    } catch (error) {
-      console.error('Error checking admin status:', error);
-      throw error;
-    }
+    const contract = await this.getContract(false);
+    const adminAddress = await contract.admin();
+    return adminAddress.toLowerCase() === address.toLowerCase();
   }
 
-  // Méthodes d'écriture (nécessitent un signer et des frais de gas)
+  // -----------------------------
+  // MÉTHODES D'ÉCRITURE (signer)
+  // -----------------------------
+
   async vote(candidateId) {
     try {
       const contract = await this.getContract(true);
-      
-      // Estimer le gas
       const gasEstimate = await contract.vote.estimateGas(candidateId);
-      
-      // Ajouter une marge de sécurité de 20%
       const gasLimit = gasEstimate * 120n / 100n;
-      
       const tx = await contract.vote(candidateId, { gasLimit });
-      
-      console.log('Vote transaction sent:', tx.hash);
-      return tx;
-      
+      return await tx.wait();
     } catch (error) {
-      console.error('Error voting:', error);
       this.handleContractError(error);
     }
   }
 
-  async addCandidate(name, description) {
+  // CORRIGÉE: Méthode compatible avec AdminPanel
+  async addCandidate(name, description, fromAddress) {
     try {
       const contract = await this.getContract(true);
-      
       const gasEstimate = await contract.addCandidate.estimateGas(name, description);
       const gasLimit = gasEstimate * 120n / 100n;
-      
       const tx = await contract.addCandidate(name, description, { gasLimit });
-      
-      console.log('Add candidate transaction sent:', tx.hash);
-      return tx;
-      
+      return await tx.wait();
     } catch (error) {
-      console.error('Error adding candidate:', error);
       this.handleContractError(error);
     }
   }
@@ -255,17 +257,11 @@ class ContractService {
   async registerVoter(voterAddress) {
     try {
       const contract = await this.getContract(true);
-      
       const gasEstimate = await contract.registerVoter.estimateGas(voterAddress);
       const gasLimit = gasEstimate * 120n / 100n;
-      
       const tx = await contract.registerVoter(voterAddress, { gasLimit });
-      
-      console.log('Register voter transaction sent:', tx.hash);
-      return tx;
-      
+      return await tx.wait();
     } catch (error) {
-      console.error('Error registering voter:', error);
       this.handleContractError(error);
     }
   }
@@ -273,53 +269,41 @@ class ContractService {
   async registerMultipleVoters(voterAddresses) {
     try {
       const contract = await this.getContract(true);
-      
       const gasEstimate = await contract.registerMultipleVoters.estimateGas(voterAddresses);
       const gasLimit = gasEstimate * 120n / 100n;
-      
       const tx = await contract.registerMultipleVoters(voterAddresses, { gasLimit });
-      
-      console.log('Register multiple voters transaction sent:', tx.hash);
-      return tx;
-      
+      return await tx.wait();
     } catch (error) {
-      console.error('Error registering multiple voters:', error);
       this.handleContractError(error);
     }
   }
 
-  async startVoting() {
+  // CORRIGÉE: Méthode compatible avec AdminPanel
+  async startVoting(fromAddress) {
     try {
       const contract = await this.getContract(true);
-      
       const gasEstimate = await contract.startVoting.estimateGas();
       const gasLimit = gasEstimate * 120n / 100n;
-      
       const tx = await contract.startVoting({ gasLimit });
-      
-      console.log('Start voting transaction sent:', tx.hash);
-      return tx;
-      
+      return await tx.wait();
     } catch (error) {
-      console.error('Error starting voting:', error);
       this.handleContractError(error);
     }
+  }
+
+  // CORRIGÉE: Méthode compatible avec AdminPanel (alias pour endVoting)
+  async endVoting(fromAddress) {
+    return this.stopVoting();
   }
 
   async stopVoting() {
     try {
       const contract = await this.getContract(true);
-      
       const gasEstimate = await contract.stopVoting.estimateGas();
       const gasLimit = gasEstimate * 120n / 100n;
-      
       const tx = await contract.stopVoting({ gasLimit });
-      
-      console.log('Stop voting transaction sent:', tx.hash);
-      return tx;
-      
+      return await tx.wait();
     } catch (error) {
-      console.error('Error stopping voting:', error);
       this.handleContractError(error);
     }
   }
@@ -327,60 +311,72 @@ class ContractService {
   async setElectionName(name) {
     try {
       const contract = await this.getContract(true);
-      
       const gasEstimate = await contract.setElectionName.estimateGas(name);
       const gasLimit = gasEstimate * 120n / 100n;
-      
       const tx = await contract.setElectionName(name, { gasLimit });
-      
-      console.log('Set election name transaction sent:', tx.hash);
-      return tx;
-      
+      return await tx.wait();
     } catch (error) {
-      console.error('Error setting election name:', error);
       this.handleContractError(error);
     }
   }
 
-  // Attendre la confirmation d'une transaction
-  async waitForTransaction(tx, confirmations = 1) {
+  // NOUVELLE: Fonction de reset pour le développement
+  async resetContract() {
     try {
-      console.log(`Waiting for transaction ${tx.hash} to be mined...`);
-      const receipt = await tx.wait(confirmations);
-      console.log(`Transaction ${tx.hash} confirmed in block ${receipt.blockNumber}`);
-      return receipt;
+      const contract = await this.getContract(true);
+      const gasEstimate = await contract.resetContract.estimateGas();
+      const gasLimit = gasEstimate * 120n / 100n;
+      const tx = await contract.resetContract({ gasLimit });
+      return await tx.wait();
     } catch (error) {
-      console.error('Error waiting for transaction:', error);
-      throw error;
+      console.error('Error resetting contract:', error);
+      this.handleContractError(error);
     }
   }
 
-  // Gérer les erreurs de contrat
+  // -----------------------------
+  // UTILS
+  // -----------------------------
+
+  async waitForTransaction(tx, confirmations = 1) {
+    console.log(`Waiting for transaction ${tx.hash}...`);
+    return await tx.wait(confirmations);
+  }
+
+  // AMÉLIORÉE: Gestion d'erreur plus robuste
   handleContractError(error) {
+    console.error('Contract error:', error);
+    
     if (error.code === 'UNPREDICTABLE_GAS_LIMIT') {
-      throw new Error('Transaction would fail. Please check the conditions and try again.');
+      throw new Error('Transaction would fail. Check conditions.');
     }
-    
     if (error.code === 'INSUFFICIENT_FUNDS') {
-      throw new Error('Insufficient funds for transaction fees.');
+      throw new Error('Insufficient funds for gas fees.');
     }
-    
     if (error.code === 'ACTION_REJECTED') {
-      throw new Error('Transaction was rejected by user.');
+      throw new Error('User rejected the transaction');
     }
-    
+    if (error.message?.includes('user rejected transaction')) {
+      throw new Error('User rejected');
+    }
+    if (error.message?.includes('Voting is already active')) {
+      throw new Error('Voting is already active');
+    }
+    if (error.message?.includes('Cannot add candidates during active voting')) {
+      throw new Error('Registration phase ended');
+    }
+    if (error.message?.includes('Voting is not active')) {
+      throw new Error('Voting not started');
+    }
     if (error.reason) {
       throw new Error(error.reason);
     }
-    
     if (error.message) {
       throw new Error(error.message);
     }
-    
-    throw new Error('An unknown error occurred during the transaction.');
+    throw new Error('Unknown contract error.');
   }
 
-  // Getters
   getContractInfo() {
     return this.contractInfo;
   }
@@ -390,7 +386,5 @@ class ContractService {
   }
 }
 
-// Instance singleton
 const contractService = new ContractService();
-
 export default contractService;

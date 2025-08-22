@@ -56,6 +56,11 @@ contract VotingContract {
         candidateCounter = 0;
     }
     
+    // AJOUT: Fonction owner() pour la compatibilité avec votre frontend
+    function owner() external view returns (address) {
+        return admin;
+    }
+    
     function setElectionName(string memory _name) external onlyAdmin {
         electionName = _name;
     }
@@ -145,6 +150,30 @@ contract VotingContract {
         return candidateIds;
     }
     
+    // MODIFIÉ: Fonction pour récupérer tous les candidats avec leurs détails
+    function getAllCandidatesDetails() external view returns (
+        uint256[] memory ids,
+        string[] memory names,
+        string[] memory descriptions,
+        uint256[] memory voteCounts
+    ) {
+        uint256 length = candidateIds.length;
+        ids = new uint256[](length);
+        names = new string[](length);
+        descriptions = new string[](length);
+        voteCounts = new uint256[](length);
+        
+        for (uint256 i = 0; i < length; i++) {
+            uint256 candidateId = candidateIds[i];
+            ids[i] = candidates[candidateId].id;
+            names[i] = candidates[candidateId].name;
+            descriptions[i] = candidates[candidateId].description;
+            voteCounts[i] = candidates[candidateId].voteCount;
+        }
+        
+        return (ids, names, descriptions, voteCounts);
+    }
+    
     function getResults() external view returns (
         uint256[] memory ids,
         string[] memory names,
@@ -196,5 +225,34 @@ contract VotingContract {
     
     function getCandidateCount() external view returns (uint256) {
         return candidateIds.length;
+    }
+    
+    // AJOUT: Fonction pour obtenir le statut actuel (compatible avec votre frontend)
+    function workflowStatus() external view returns (uint256) {
+        if (!votingActive && candidateIds.length == 0) {
+            return 0; // Registration phase
+        } else if (votingActive) {
+            return 1; // Voting phase
+        } else {
+            return 2; // Ended phase
+        }
+    }
+    
+    // AJOUT: Fonction de reset pour le développement (à retirer en production)
+    function resetContract() external onlyAdmin {
+        // Supprimer tous les candidats
+        for (uint256 i = 0; i < candidateIds.length; i++) {
+            delete candidates[candidateIds[i]];
+        }
+        delete candidateIds;
+        
+        // Réinitialiser les variables
+        votingActive = false;
+        totalVotes = 0;
+        candidateCounter = 0;
+        electionName = "Default Election";
+        
+        // Note: Les voters mappings ne peuvent pas être supprimés
+        // Mais ils seront "oubliés" avec le nouveau déploiement
     }
 }

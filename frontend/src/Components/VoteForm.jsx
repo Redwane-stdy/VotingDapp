@@ -29,7 +29,7 @@ const VoteForm = ({ account, onSuccess, onError }) => {
 
   const loadCandidates = async () => {
     try {
-      const candidatesData = await contractService.getCandidates();
+      const candidatesData = await contractService.getAllCandidates();
       setCandidates(candidatesData);
     } catch (error) {
       console.error('Erreur lors du chargement des candidats:', error);

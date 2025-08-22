@@ -6,226 +6,239 @@ class Web3Service {
     this.signer = null;
     this.account = null;
     this.chainId = null;
+    this.isConnected = false;
+
+    this.fallbackProvider = null;
+
+    this.HARDHAT_CHAIN_ID = "31337"; // Hardhat local
+    this.HARDHAT_RPC_URL = "http://127.0.0.1:8545";
+
+    this.initializeFallbackProvider();
+    this.setupEventListeners();
   }
 
-  // Vérifier si MetaMask est disponible
-  isMetaMaskAvailable() {
-    return typeof window.ethereum !== 'undefined';
-  }
-
-  // Connecter MetaMask
-  async connectWallet() {
-    if (!this.isMetaMaskAvailable()) {
-      throw new Error('MetaMask is not installed. Please install MetaMask to continue.');
-    }
-
+  // Provider de fallback (Hardhat local)
+  initializeFallbackProvider() {
     try {
-      // Demander la connexion à MetaMask
-      await window.ethereum.request({ method: 'eth_requestAccounts' });
-      
-      // Créer le provider et signer
-      this.provider = new ethers.BrowserProvider(window.ethereum);
-      this.signer = await this.provider.getSigner();
-      this.account = await this.signer.getAddress();
-      
-      // Récupérer le chain ID
-      const network = await this.provider.getNetwork();
-      this.chainId = network.chainId.toString();
-      
-      // Écouter les changements de compte
-      window.ethereum.on('accountsChanged', this.handleAccountsChanged.bind(this));
-      window.ethereum.on('chainChanged', this.handleChainChanged.bind(this));
-
-      return {
-        account: this.account,
-        chainId: this.chainId
-      };
+      this.fallbackProvider = new ethers.JsonRpcProvider(this.HARDHAT_RPC_URL);
+      console.log('✅ Fallback provider (Hardhat) initialized');
     } catch (error) {
-      console.error('Error connecting wallet:', error);
-      throw new Error('Failed to connect wallet: ' + error.message);
+      console.warn('⚠️ Could not initialize fallback provider:', error);
     }
   }
 
-  // Déconnecter le wallet
-  async disconnectWallet() {
-    this.provider = null;
-    this.signer = null;
-    this.account = null;
-    this.chainId = null;
-    
-    // Retirer les listeners
-    if (window.ethereum) {
-      window.ethereum.removeListener('accountsChanged', this.handleAccountsChanged);
-      window.ethereum.removeListener('chainChanged', this.handleChainChanged);
-    }
-  }
-
-  // Gérer le changement de compte
-  handleAccountsChanged(accounts) {
-    if (accounts.length === 0) {
-      // L'utilisateur a déconnecté son wallet
-      this.disconnectWallet();
-      window.location.reload();
-    } else if (accounts[0] !== this.account) {
-      // L'utilisateur a changé de compte
-      window.location.reload();
-    }
-  }
-
-  // Gérer le changement de réseau
-  handleChainChanged(chainId) {
-    // Recharger la page pour éviter les problèmes de state
-    window.location.reload();
-  }
-
-  // Vérifier si le wallet est connecté
-  async isConnected() {
-    if (!this.isMetaMaskAvailable()) return false;
-    
-    try {
-      const accounts = await window.ethereum.request({ method: 'eth_accounts' });
-      return accounts.length > 0;
-    } catch (error) {
-      console.error('Error checking connection:', error);
-      return false;
-    }
-  }
-
-  // Récupérer le compte actuel
-  async getCurrentAccount() {
-    if (!this.account && await this.isConnected()) {
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const signer = await provider.getSigner();
-      this.account = await signer.getAddress();
-    }
-    return this.account;
-  }
-
-  // Signer un message
-  async signMessage(message) {
-    if (!this.signer) {
-      throw new Error('Wallet not connected');
-    }
-    
-    try {
-      const signature = await this.signer.signMessage(message);
-      return signature;
-    } catch (error) {
-      console.error('Error signing message:', error);
-      throw new Error('Failed to sign message: ' + error.message);
-    }
-  }
-
-  // Changer de réseau
-  async switchNetwork(chainId) {
-    if (!this.isMetaMaskAvailable()) {
-      throw new Error('MetaMask is not available');
-    }
-
-    try {
-      await window.ethereum.request({
-        method: 'wallet_switchEthereumChain',
-        params: [{ chainId: ethers.toQuantity(chainId) }],
-      });
-    } catch (switchError) {
-      // Si le réseau n'existe pas, l'ajouter
-      if (switchError.code === 4902) {
-        await this.addNetwork(chainId);
-      } else {
-        throw switchError;
-      }
-    }
-  }
-
-  // Ajouter un réseau personnalisé
-  async addNetwork(chainId) {
-    if (!this.isMetaMaskAvailable()) {
-      throw new Error('MetaMask is not available');
-    }
-
-    // Configuration pour le réseau local Hardhat
-    if (chainId === 31337 || chainId === '31337') {
-      try {
-        await window.ethereum.request({
-          method: 'wallet_addEthereumChain',
-          params: [
-            {
-              chainId: '0x7a69', // 31337 en hex
-              chainName: 'Hardhat Local',
-              nativeCurrency: {
-                name: 'Ethereum',
-                symbol: 'ETH',
-                decimals: 18,
-              },
-              rpcUrls: ['http://127.0.0.1:8545'],
-              blockExplorerUrls: null,
-            },
-          ],
-        });
-      } catch (addError) {
-        console.error('Error adding network:', addError);
-        throw new Error('Failed to add network: ' + addError.message);
-      }
-    }
-  }
-
-  // Récupérer le solde d'un compte
-  async getBalance(address = null) {
-    if (!this.provider) {
-      throw new Error('Provider not available');
-    }
-
-    const targetAddress = address || this.account;
-    if (!targetAddress) {
-      throw new Error('No address provided');
-    }
-
-    try {
-      const balance = await this.provider.getBalance(targetAddress);
-      return ethers.formatEther(balance);
-    } catch (error) {
-      console.error('Error getting balance:', error);
-      throw new Error('Failed to get balance: ' + error.message);
-    }
-  }
-
-  // Récupérer les informations du réseau
-  async getNetworkInfo() {
-    if (!this.provider) {
-      throw new Error('Provider not available');
-    }
-
-    try {
-      const network = await this.provider.getNetwork();
-      return {
-        chainId: network.chainId.toString(),
-        name: network.name
-      };
-    } catch (error) {
-      console.error('Error getting network info:', error);
-      throw new Error('Failed to get network info: ' + error.message);
-    }
-  }
-
-  // Getters
   getProvider() {
-    return this.provider;
+    if (this.provider && this.isConnected) return this.provider;
+    if (this.fallbackProvider) return this.fallbackProvider;
+    return null;
   }
 
   getSigner() {
     return this.signer;
   }
 
+  isMetaMaskAvailable() {
+    return typeof window !== 'undefined' && window.ethereum;
+  }
+
+  // 🔑 Connexion à MetaMask (et forcer Hardhat)
+  async connectWallet() {
+    try {
+      if (!this.isMetaMaskAvailable()) {
+        throw new Error('MetaMask is not installed. Please install MetaMask.');
+      }
+
+      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+
+      if (accounts.length === 0) {
+        throw new Error('No accounts found. Please unlock MetaMask.');
+      }
+
+      this.provider = new ethers.BrowserProvider(window.ethereum);
+      this.signer = await this.provider.getSigner();
+      this.account = accounts[0];
+
+      const network = await this.provider.getNetwork();
+      this.chainId = network.chainId.toString();
+
+      // ⚠️ Vérifier si on est bien sur Hardhat (31337)
+      if (this.chainId !== this.HARDHAT_CHAIN_ID) {
+        console.warn(`⚠️ Wrong network: ${this.chainId}. Switching to Hardhat...`);
+        await this.switchNetwork(this.HARDHAT_CHAIN_ID);
+        this.chainId = this.HARDHAT_CHAIN_ID;
+      }
+
+      this.isConnected = true;
+
+      console.log('✅ Wallet connected:', {
+        account: this.account,
+        chainId: this.chainId
+      });
+
+      return {
+        account: this.account,
+        chainId: this.chainId
+      };
+
+    } catch (error) {
+      console.error('❌ Error connecting wallet:', error);
+      throw error;
+    }
+  }
+
+  async disconnectWallet() {
+    this.provider = null;
+    this.signer = null;
+    this.account = null;
+    this.chainId = null;
+    this.isConnected = false;
+
+    console.log('Wallet disconnected');
+  }
+
+  async getBalance(address = null) {
+    try {
+      const provider = this.getProvider();
+      if (!provider) throw new Error('Provider not available');
+
+      const targetAddress = address || this.account;
+      if (!targetAddress) throw new Error('No address provided and no connected account');
+
+      const balance = await provider.getBalance(targetAddress);
+      return ethers.formatEther(balance);
+
+    } catch (error) {
+      console.error('Error getting balance:', error);
+      throw error;
+    }
+  }
+
+  async getNetworkInfo() {
+    try {
+      const provider = this.getProvider();
+      if (!provider) throw new Error('Provider not available');
+
+      const network = await provider.getNetwork();
+      return {
+        chainId: network.chainId.toString(),
+        name: network.name,
+        blockNumber: await provider.getBlockNumber()
+      };
+
+    } catch (error) {
+      console.error('Error getting network info:', error);
+      throw error;
+    }
+  }
+
+  // 🔄 Forcer un switch réseau
+  async switchNetwork(chainId) {
+    if (!this.isMetaMaskAvailable()) throw new Error('MetaMask not available');
+    const hexChainId = '0x' + parseInt(chainId).toString(16);
+
+    try {
+      await window.ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: hexChainId }],
+      });
+    } catch (switchError) {
+      // Si le réseau n’est pas ajouté dans MetaMask
+      if (switchError.code === 4902) {
+        console.log('Adding Hardhat network to MetaMask...');
+        await window.ethereum.request({
+          method: 'wallet_addEthereumChain',
+          params: [{
+            chainId: hexChainId,
+            chainName: "Hardhat Local",
+            rpcUrls: [this.HARDHAT_RPC_URL],
+            nativeCurrency: {
+              name: "Hardhat ETH",
+              symbol: "ETH",
+              decimals: 18
+            }
+          }]
+        });
+      } else {
+        console.error('Error switching network:', switchError);
+        throw switchError;
+      }
+    }
+  }
+
+  setupEventListeners() {
+    if (!this.isMetaMaskAvailable()) return;
+
+    window.ethereum.on('accountsChanged', (accounts) => {
+      console.log('Accounts changed:', accounts);
+      if (accounts.length === 0) {
+        this.disconnectWallet();
+      } else if (accounts[0] !== this.account) {
+        this.account = accounts[0];
+        if (this.provider) {
+          this.provider.getSigner().then(signer => {
+            this.signer = signer;
+          });
+        }
+      }
+    });
+
+    window.ethereum.on('chainChanged', (chainId) => {
+      console.log('Chain changed:', chainId);
+      this.chainId = parseInt(chainId, 16).toString();
+      if (this.chainId !== this.HARDHAT_CHAIN_ID) {
+        console.warn(`⚠️ Not on Hardhat (31337). Currently on ${this.chainId}`);
+      }
+    });
+
+    window.ethereum.on('connect', (connectInfo) => {
+      console.log('MetaMask connected:', connectInfo);
+    });
+
+    window.ethereum.on('disconnect', (error) => {
+      console.log('MetaMask disconnected:', error);
+      this.disconnectWallet();
+    });
+  }
+
+  async checkConnection() {
+    if (!this.isMetaMaskAvailable()) return false;
+
+    try {
+      const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+
+      if (accounts.length > 0) {
+        await this.connectWallet();
+        return true;
+      }
+    } catch (error) {
+      console.error('Error checking connection:', error);
+    }
+
+    return false;
+  }
+
   getAccount() {
     return this.account;
+  }
+
+  getIsConnected() {
+    return this.isConnected;
   }
 
   getChainId() {
     return this.chainId;
   }
+
+  getConnectionInfo() {
+    return {
+      isConnected: this.isConnected,
+      account: this.account,
+      chainId: this.chainId,
+      hasMetaMask: this.isMetaMaskAvailable(),
+      hasFallbackProvider: !!this.fallbackProvider
+    };
+  }
 }
 
-// Instance singleton
 const web3Service = new Web3Service();
-
 export default web3Service;
